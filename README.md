@@ -13,6 +13,17 @@ Este projeto consiste em um sistema de controle e monitoramento em tempo real pa
 
 ---
 
+## Bibliotecas Necessárias
+
+Para compilar este projeto, instale as seguintes bibliotecas através do Gerenciador de Bibliotecas da Arduino IDE:
+
+1. **Servo** (por Arduino) - Nativa, usada para o sinal PWM do ESC.
+2. **Adafruit GFX Library** (por Adafruit) - Base para gráficos no display.
+3. **Adafruit PCD8544 Nokia 5110 LCD library** (por Adafruit) - Driver específico para o display.
+4. **SPI** (Nativa) - Protocolo de comunicação com o display.
+
+---
+
 ## Camadas de Segurança Implementadas
 
 ### 1. Failsafe de Conexão
