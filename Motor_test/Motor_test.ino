@@ -18,11 +18,29 @@ bool motorArmado = false;
 Adafruit_PCD8544 display = Adafruit_PCD8544(13, 12, 11, 10, 9);
 
 //Tempo para medir realizar o calculo em millis
-unsigned long ultimoClique = 0;
+int long ultimoClique = 0;
+
+//Menu para a escolha da tela
+bool menuConfirmado = false;
+
+// 0 -> unidirecional
+// 1 -> bidirecional
+int escType = 0;
+
+bool sinalLiberado = false;
+
+//tempo para o calculo da tela
+int long tempoInicio = millis();
 
 void setup() {
 
   Serial.begin(9600);
+
+ //Parte do controle dos motores com potenciometro
+  pinMode(potenciometro, INPUT);
+
+  //essa entrada vai decidir o tipo de ESC (unidirecional e bidirecional)
+  pinMode(buttonESC, INPUT_PULLUP);
 
   //Parte da tela inicialização da tela
   display.begin();
@@ -35,24 +53,48 @@ void setup() {
   display.println("MOTOR TEST");
   display.display();
 
-  //Parte do controle dos motores com potenciometro
-  pinMode(potenciometro, INPUT);
+  while(menuConfirmado == false)
+  {
+    bool estadoBotao = (digitalRead(buttonESC) == LOW); // Verifica se apertou
 
-  //essa entrada vai decidir o tipo de ESC (unidirecional e bidirecional)
-  pinMode(buttonESC, INPUT_PULLUP);
+    if(estadoBotao) // Só entra aqui se o botão for apertado
+    {
+      escType = !escType; // Inverte o valor (se era 0 vira 1, se era 1 vira 0)
+      delay(200);         // Delay aqui é fundamental para você ter tempo de soltar o dedo
+    }
+  
+  // 3. Desenha na tela (apenas o que mudou)
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("Escolha o ESC:");
 
-  //Envio do sinal para o motor
+  // Mostra o cursor onde estiver selecionado
+  display.setCursor(0, 15);
+  display.print(escType == 0 ? "> Uni-dir" : " Uni-dir");
+  display.setCursor(0, 30);
+  display.print(escType == 1 ? "> Bi-dir" : " Bi-dir");
+  display.display();
+
+  if(millis() - tempoInicio >= 5000)
+  {
+    menuConfirmado = true;
+  }
+  }
+  
   motor.attach(pinoEsc);
-  motor.writeMicroseconds(1000);
+  if(escType == 0)
+  {
+    motor.writeMicroseconds(1000);
+  }
+  else
+  {
+    motor.writeMicroseconds(1500);
+  }
 
   //Variavel que faz a leitura incial do potenciometro para os calculos da camada de segurança
   leituraInicial = analogRead(potenciometro);
   delay(2000);
-
 }
-// 0 -> unidirecional
-// 1 -> bidirecional
-int escType = 0;
 
 void loop(){
 
@@ -107,6 +149,7 @@ void loop(){
       {   
         escType = (escType + 1) % 2;
         ultimoClique = tempoAtual;
+        sinalLiberado = false;
         Serial.println("Modo Alterado");
 
         //Mostrando na tela a mudança do ESC
@@ -120,6 +163,7 @@ void loop(){
         display.print("ESC Uni-dir");
         sinalFinal = map(leitura_potenciometro, 0, 1023, 1000, 1900);
         porcentagem = map(leitura_potenciometro, 0, 1023, 0, 100);
+        sinalLiberado = true; // Uni-dir dispensa trava
       }
 
       else
@@ -129,11 +173,25 @@ void loop(){
         sinalFinal = map(leitura_potenciometro, 0, 1023, 1000, 2000);
         porcentagem = map(leitura_potenciometro, 0, 1023, -100, 100);
         }
-    
+      
+        //Lógica quue irá impedir bugs de não achar o ponto neutro no ESC-bir
+        if(escType == 1)
+        {
+          if(abs(leitura_potenciometro - 512) < 30)
+          {
+            sinalLiberado = true;
+          }
+          if(!sinalLiberado)
+          {
+            sinalFinal = 1500;
+            display.setCursor(0, 20);
+            display.print("Ajuste a tela");
+          } 
+      }    
+      motor.writeMicroseconds(sinalFinal);
       Serial.print(sinalFinal);
       Serial.print("|");
       Serial.println(leitura_potenciometro);
-      motor.writeMicroseconds(sinalFinal);
 
       //Parte que plota os sinais na tela
       display.setCursor(0, 10);
