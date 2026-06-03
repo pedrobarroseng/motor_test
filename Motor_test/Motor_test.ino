@@ -33,14 +33,19 @@ unsigned long tempoInicio = 0;
 unsigned long tempoSegurando = 0;
 bool botaoAnterior = false;
 
+int botaoResetar = 23;
+
 void setup() {
   Serial.begin(9600);
 
   // Parte do controle dos motores com potenciometro
   pinMode(potenciometro, INPUT);
 
-  // essa entrada vai decidir o tipo de ESC (unidirecional e bidirecional)
+  // Essa entrada vai decidir o tipo de ESC (unidirecional e bidirecional)
   pinMode(buttonESC, INPUT_PULLUP);
+
+  // Parte que recebe a informação de irá resetar
+  pinMode(botaoResetar, INPUT_PULLUP);
 
   // Parte da tela inicialização da tela
   display.begin();
@@ -122,6 +127,25 @@ void loop() {
 
   // Leitura para a verificação de desconexão
   unsigned long leituraAtual = analogRead(potenciometro);
+
+  //verificação se o botão que reinicia foi apertado
+  if (digitalRead(botaoResetar) == LOW)
+  {
+    //Desliga o motor imediatamente 
+    motor.writeMicroseconds(escType == 0 ? 1000:1500);
+
+    //Resetar as variáveis do sistema
+    menuConfirmado = false;
+    motorArmado = false;
+    sinalLiberado = false;
+    tempoSegurando = 0;
+
+    //Forçar a volta para o setup
+    setup();
+    //Saí do loop atual para reiniciar o fluxo correto
+    return;
+
+  }
 
   if (abs((long)(leituraAtual - leituraInicial)) >= 512) {
     sistemaTravado = true;
