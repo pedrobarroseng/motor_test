@@ -1,0 +1,13 @@
+# VS Code
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Dados brutos
+data/raw/
+
+# Sistema
+.DS_Store
