@@ -1,9 +1,9 @@
 /*
  * ================================================================
- *  Motor Test — ESC Controller with Nokia 5110 Display
+ *  Motor Test - ESC Controller with Nokia 5110 Display
  *  Hardware: Arduino Mega 2560
  * ================================================================
- *  SERIAL OUTPUT (115200 baud) — CSV format:
+ *  SERIAL OUTPUT (115200 baud) - CSV format:
  *  timestamp_ms, pwm_us, adc_raw, throttle_pct, esc_type, system_state
  *
  *  system_state values:
@@ -19,37 +19,37 @@
 #include <Adafruit_PCD8544.h>
 #include <Servo.h>
 
-// ── Pin definitions ────────────────────────────────────────────
+// -- Pin definitions --------------------------------------------
 const int PIN_POTENCIOMETRO = A0;
 const int PIN_ESC           = 8;
 const int PIN_BUTTON_ESC    = 22;
 const int PIN_BUTTON_RESET  = 23;
 
-// ── Display: CLK, DIN, DC, CE, RST ────────────────────────────
+// -- Display: CLK, DIN, DC, CE, RST -----------------------------
 Adafruit_PCD8544 display = Adafruit_PCD8544(13, 12, 11, 10, 9);
 
-// ── Motor ──────────────────────────────────────────────────────
+// -- Motor ------------------------------------------------------
 Servo motor;
 
-// ── ESC configuration ──────────────────────────────────────────
+// -- ESC configuration ------------------------------------------
 // 0 = unidirectional | 1 = bidirectional
 int escType = 0;
 
-// ── Safety layer ───────────────────────────────────────────────
+// -- Safety layer -----------------------------------------------
 int  leituraInicial  = 0;
 bool sistemaTravado  = false;
 bool motorArmado     = false;
 bool sinalLiberado   = false;
 
-// ── Menu state ─────────────────────────────────────────────────
+// -- Menu state ------------------------------------------------
 bool menuConfirmado  = false;
 unsigned long tempoSegurando = 0;
 bool botaoAnterior   = false;
 
-// ── Serial header flag ─────────────────────────────────────────
+// -- Serial header flag ----------------------------------------
 bool headerEnviado = false;
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 void setup() {
   Serial.begin(115200);
 
@@ -57,7 +57,7 @@ void setup() {
   pinMode(PIN_BUTTON_ESC,    INPUT_PULLUP);
   pinMode(PIN_BUTTON_RESET,  INPUT_PULLUP);
 
-  // ── Display init ──
+  // -- Display init ---------------------------------------------
   display.begin();
   display.setContrast(55);
   display.clearDisplay();
@@ -70,7 +70,7 @@ void setup() {
   display.display();
   delay(2000);
 
-  // ── ESC Type selection menu ──
+  // -- ESC Type selection menu --
   menuConfirmado = false;
   botaoAnterior  = false;
   tempoSegurando = 0;
@@ -83,7 +83,7 @@ void setup() {
       tempoSegurando = millis();
     }
 
-    // Falling edge: button just released (short press → toggle)
+    // Falling edge: button just released (short press -> toggle)
     if (!estadoBotao && botaoAnterior) {
       if (millis() - tempoSegurando < 800) {
         escType = !escType;
@@ -91,14 +91,14 @@ void setup() {
       tempoSegurando = 0;
     }
 
-    // Held for 1 second → confirm
+    // Held for 1 second -> confirm
     if (estadoBotao && tempoSegurando > 0 && (millis() - tempoSegurando >= 1000)) {
       menuConfirmado = true;
     }
 
     botaoAnterior = estadoBotao;
 
-    // ── Menu display ──
+    // -- Menu display --
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("Escolha o ESC:");
@@ -121,11 +121,11 @@ void setup() {
     delay(20);
   }
 
-  // ── ESC arming signal ──
+  // -- ESC arming signal --
   motor.attach(PIN_ESC);
   motor.writeMicroseconds(escType == 0 ? 1000 : 1500);
 
-  // ── Reset safety state ──
+  // -- Reset safety state --
   leituraInicial = analogRead(PIN_POTENCIOMETRO);
   sistemaTravado = false;
   motorArmado    = false;
@@ -135,11 +135,11 @@ void setup() {
   delay(2000);
 }
 
-// ══════════════════════════════════════════════════════════════
+// =============================================================
 void loop() {
   int leituraAtual = analogRead(PIN_POTENCIOMETRO);
 
-  // ── Reset button ──
+  // -- Reset button --
   if (digitalRead(PIN_BUTTON_RESET) == LOW) {
     motor.writeMicroseconds(escType == 0 ? 1000 : 1500);
     delay(200); // debounce
@@ -147,18 +147,18 @@ void loop() {
     return;
   }
 
-  // ── Disconnection detection ──
+  // -- Disconnection detection --
   if (abs(leituraAtual - leituraInicial) >= 512) {
     sistemaTravado = true;
   }
 
-  // ── CSV header (sent once per session, after menu) ──
+  // == CSV header (sent once per session, after menu) ========
   if (!headerEnviado) {
     Serial.println("timestamp_ms,pwm_us,adc_raw,throttle_pct,esc_type,system_state");
     headerEnviado = true;
   }
 
-  // ══ LOCKED state ══════════════════════════════════════════
+  // == LOCKED state ==========================================
   if (sistemaTravado) {
     motor.writeMicroseconds(1000);
 
@@ -174,10 +174,10 @@ void loop() {
     // Report locked state
     enviarCSV(1000, leituraAtual, 0, "LOCKED");
 
-  // ══ NORMAL state ══════════════════════════════════════════
+  // == NORMAL state ==========================================
   } else {
 
-    // Arming condition: throttle must be at zero first
+    // -- Arming condition: throttle must be at zero first --
     if (leituraAtual < 50) {
       motorArmado = true;
     }
@@ -186,7 +186,7 @@ void loop() {
       int sinalFinal;
       int porcentagem;
 
-      // Signal mapping per ESC type
+      //-- Signal mapping per ESC type--
       if (escType == 0) {
         sinalFinal  = map(leituraAtual, 0, 1023, 1000, 1900);
         porcentagem = map(leituraAtual, 0, 1023, 0, 100);
@@ -203,7 +203,7 @@ void loop() {
       display.setTextSize(1);
       display.setTextColor(BLACK);
 
-      // ── WAITING NEUTRAL (bidirectional only) ──
+      // -- WAITING NEUTRAL (bidirectional only) --
       if (escType == 1 && !sinalLiberado) {
         sinalFinal = 1500;
 
@@ -220,7 +220,7 @@ void loop() {
         motor.writeMicroseconds(sinalFinal);
         enviarCSV(sinalFinal, leituraAtual, porcentagem, "WAITING_NEUTRAL");
 
-      // ── ARMED: normal telemetry ──
+      // -- ARMED: normal telemetry --
       } else {
         display.setCursor(0, 0);
         display.print(escType == 0 ? "ESC Uni-dir" : "ESC Bi-dir");
@@ -238,7 +238,7 @@ void loop() {
         enviarCSV(sinalFinal, leituraAtual, porcentagem, "ARMED");
       }
 
-    // ── DISARMED: waiting for zero throttle ──
+    // -- DISARMED: waiting for zero throttle --
     } else {
       motor.writeMicroseconds(escType == 0 ? 1000 : 1500);
 
@@ -258,10 +258,10 @@ void loop() {
   delay(10);
 }
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // Helper: sends one CSV line over serial
 // Format: timestamp_ms,pwm_us,adc_raw,throttle_pct,esc_type,system_state
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 void enviarCSV(int pwm, int adcRaw, int pct, const char* state) {
   Serial.print(millis());       Serial.print(",");
   Serial.print(pwm);            Serial.print(",");

@@ -18,6 +18,7 @@ An Arduino-based Electronic Speed Controller (ESC) testing platform designed to 
 - [Signal Mapping](#signal-mapping)
 - [Display States](#display-states)
 - [Serial Output](#serial-output)
+- [Data Acquisition](#data-acquisition)
 - [Known Limitations](#known-limitations)
 
 ---
@@ -46,7 +47,7 @@ The project is structured around two core operational modes:
 | 10 kΩ Potentiometer | Analog throttle control input |
 | 2× Momentary Push Buttons | ESC type selection and system reset |
 
-> **Note:** The pin assignments used in this project (especially pin 22 and 23 for buttons) are specific to boards with extended digital I/O, such as the Arduino Mega. Adaptation is required for boards like the Arduino Uno.
+> **Note:** The pin assignments used in this project (especially pins 22 and 23 for buttons) are specific to boards with extended digital I/O, such as the Arduino Mega. Adaptation is required for boards like the Arduino Uno.
 
 ---
 
@@ -94,7 +95,7 @@ The firmware implements three distinct safety mechanisms:
 
 **1. Potentiometer Disconnection Detection**
 
-At the end of each `loop()` iteration, the current ADC reading (`leituraAtual`) is stored as `leituraInicial`. On the next iteration, if the absolute difference between these two readings exceeds 512 (half the ADC range of 0–1023), the system enters a locked state (`sistemaTravado = true`), cutting the motor signal and displaying a `"connection error"` message. This detects sudden, physically implausible jumps in the potentiometer value — characteristic of a disconnected or broken analog input.
+At the end of each `loop()` iteration, the current ADC reading (`leituraAtual`) is stored as `leituraInicial`. On the next iteration, if the absolute difference between these two readings exceeds 512 (half the ADC range of 0–1023), the system enters a locked state (`sistemaTravado = true`), cutting the motor signal and displaying an error message. This detects sudden, physically implausible jumps in the potentiometer value — characteristic of a disconnected or broken analog input.
 
 ```
 |leituraAtual - leituraInicial| ≥ 512  →  LOCK
@@ -112,7 +113,7 @@ For bidirectional ESCs, an additional flag (`sinalLiberado`) requires the operat
 
 ### Menu and ESC Selection
 
-The `setup()` function enters a blocking `while` loop that implements a two-action button interface using a single button (`buttonESC`), distinguished by press duration:
+The `setup()` function enters a blocking `while` loop that implements a two-action button interface using a single button (`PIN_BUTTON_ESC`), distinguished by press duration:
 
 | Interaction | Duration | Action |
 |---|---|---|
@@ -149,7 +150,12 @@ The main `loop()` follows this execution order on each iteration:
 1. Read potentiometer (ADC 0–1023)
 2. Check reset button → call setup() if pressed
 3. Check disconnection delta → lock if exceeded
-4. If not locked:
+4. Send CSV header once (first iteration only)
+5. If locked:
+   - Hold motor at minimum signal
+   - Display error screen
+   - Report LOCKED state via serial
+6. If not locked:
    a. Check arming condition (ADC < 50)
    b. If armed:
       - Map ADC to PWM microseconds
@@ -157,12 +163,13 @@ The main `loop()` follows this execution order on each iteration:
       - Apply neutral lock (bidirectional only)
       - Update display
       - Write PWM to ESC
-      - Send serial telemetry
+      - Send CSV telemetry line via serial
    c. If not armed:
       - Hold minimum/neutral signal
       - Display arming instruction
-5. Store current ADC as reference for next iteration
-6. Delay 10 ms
+      - Report DISARMED state via serial
+7. Store current ADC as reference for next iteration
+8. Delay 10 ms
 ```
 
 ---
@@ -171,56 +178,147 @@ The main `loop()` follows this execution order on each iteration:
 
 The `map()` function performs a linear interpolation from the ADC domain to the PWM and percentage domains.
 
+### The PWM RC Protocol
+
+Both modes follow the **standard hobby PWM RC protocol**, which originated in the 1970s with radio-controlled systems and has since been widely adopted by the ESC industry for drones, aircraft, and robotics. In this protocol, the ESC does not interpret positive or negative voltages — it measures only the **duration of each pulse** in microseconds and maps that duration to a motor command according to its internal firmware:
+
+```
+1000 µs ←————————————— 1500 µs ————————————→ 2000 µs
+   |                       |                       |
+minimum                  center                 maximum
+```
+
+The physical meaning of each point depends entirely on the ESC type. The same electrical pulse of 1000 µs means "stopped" on a unidirectional ESC and "maximum reverse" on a bidirectional one — the signal is identical; only the ESC's internal firmware interpretation differs.
+
+It is worth noting that more modern ESC protocols such as DSHOT, Oneshot, and Multishot use different signal formats and ranges. This bench targets specifically the standard PWM RC protocol, which remains the most widely supported across commercial ESC models.
+
+---
+
 ### Unidirectional ESC
 
-| Variable | Input Range | Output Range |
-|---|---|---|
-| `sinalFinal` (PWM) | 0 – 1023 | 1000 – 1900 µs |
-| `porcentagem` | 0 – 1023 | 0 – 100 % |
+| Variable | Input Range | Output Range | Resolution |
+|---|---|---|---|
+| `sinalFinal` (PWM) | 0 – 1023 | 1000 – 1900 µs | ~0.88 µs per ADC step |
+| `porcentagem` | 0 – 1023 | 0 – 100 % | ~0.098% per ADC step |
 
-> The maximum PWM is intentionally capped at 1900 µs rather than 2000 µs to provide a safety headroom below the absolute ESC maximum.
+The usable PWM range is **900 µs** (1000 to 1900 µs). The maximum is intentionally capped at 1900 µs rather than 2000 µs as a safety margin for bench testing — this means the ESC never receives the absolute maximum pulse, operating at approximately 95% of its full rated range. The practical effect of this cap is greater control resolution: each 1% of potentiometer travel corresponds to ~9 µs of PWM variation, giving the operator finer granularity over the motor speed.
+
+---
 
 ### Bidirectional ESC
 
-| Variable | Input Range | Output Range |
-|---|---|---|
-| `sinalFinal` (PWM) | 0 – 1023 | 1000 – 2000 µs |
-| `porcentagem` | 0 – 1023 | -100 – 100 % |
+| Variable | Input Range | Output Range | Resolution |
+|---|---|---|---|
+| `sinalFinal` (PWM) | 0 – 1023 | 1000 – 2000 µs | ~0.98 µs per ADC step |
+| `porcentagem` | 0 – 1023 | -100 – 100 % | ~0.195% per ADC step |
 
-The center of the potentiometer (ADC ≈ 512) corresponds to 1500 µs — the standard neutral point for bidirectional ESCs.
+The full 1000–2000 µs range is used to preserve the **symmetric range around the 1500 µs neutral point**:
+
+```
+1000 µs → -100% (maximum reverse)   distance from neutral: 500 µs
+1500 µs →    0% (neutral / stopped) distance from neutral:   0 µs
+2000 µs → +100% (maximum forward)   distance from neutral: 500 µs
+```
+
+The ESC internally computes the deviation from neutral (`pulse - 1500 µs`) to determine direction and magnitude. Both directions are therefore symmetric in power delivery.
+
+A throttle reading of -100% producing a PWM of 1000 µs may appear counterintuitive — a lower number representing higher reverse power. This is not a design flaw but a direct consequence of the RC PWM protocol convention. This behavior is deliberately preserved in the telemetry display to maintain full traceability between raw PWM values and physical ESC behavior.
+
+Compared to the unidirectional mode, each side of the bidirectional range spans only 500 µs, meaning each 1% of potentiometer travel corresponds to ~5 µs of PWM variation — making the control more sensitive per unit of potentiometer movement.
 
 ---
 
 ## Display States
 
-The Nokia 5110 renders four distinct screens throughout the program lifecycle:
+The Nokia 5110 renders five distinct screens throughout the program lifecycle:
 
 | State | Trigger | Content |
 |---|---|---|
-| **Splash Screen** | Boot | `"MOTOR TEST"` centered, shown for 2 seconds |
+| **Splash Screen** | Boot | `"MOTOR TEST"` and `"ESC Bench"`, shown for 2 seconds |
 | **ESC Selection Menu** | `setup()` while-loop | Mode selector with progress bar |
 | **Arming Prompt** | Motor not yet armed | Instructions to zero the potentiometer |
-| **Neutral Lock Warning** | Bidirectional, center not reached | Current percentage and target PWM |
-| **Telemetry Screen** | Normal operation | ESC type, throttle %, PWM value, raw ADC |
+| **Neutral Lock Warning** | Bidirectional, center not reached | Current percentage, separator line, and target PWM |
+| **Telemetry Screen** | Normal operation | ESC type, throttle %, separator, PWM value, separator, raw ADC |
 
 ---
 
 ## Serial Output
 
-During normal operation, the firmware transmits one line per loop iteration over UART at 9600 baud in the following format:
+During normal operation, the firmware transmits data at **115200 baud** in CSV format. A header line is sent once per session immediately after the menu selection, followed by one data line per loop iteration (~10 ms interval).
+
+### CSV Format
 
 ```
-<sinalFinal>|<leitura_potenciometro>
+timestamp_ms,pwm_us,adc_raw,throttle_pct,esc_type,system_state
 ```
 
-**Example:**
+| Field | Description | Example |
+|---|---|---|
+| `timestamp_ms` | Time since boot in milliseconds (`millis()`) | `8040` |
+| `pwm_us` | PWM signal sent to the ESC in microseconds | `1450` |
+| `adc_raw` | Raw ADC reading from the potentiometer (0–1023) | `461` |
+| `throttle_pct` | Mapped throttle percentage (0–100 or -100–100) | `45` |
+| `esc_type` | Selected ESC mode | `UNI` or `BI` |
+| `system_state` | Current system state | `ARMED`, `DISARMED`, `WAITING_NEUTRAL`, `LOCKED` |
+
+### Example Output
+
 ```
-1450|461
-1523|535
-1601|614
+timestamp_ms,pwm_us,adc_raw,throttle_pct,esc_type,system_state
+8040,1000,0,0,UNI,ARMED
+8109,1450,461,45,UNI,ARMED
+8178,1523,535,52,UNI,ARMED
 ```
 
-This output can be monitored via the Arduino IDE Serial Monitor or plotted with the Serial Plotter for real-time visualization of the PWM signal versus raw ADC value.
+---
+
+## Data Acquisition
+
+This project includes a Python-based data acquisition and analysis pipeline for collecting and visualizing ESC test data.
+
+### Requirements
+
+```
+pyserial
+matplotlib
+pandas
+```
+
+Install with:
+
+```bash
+pip install pyserial matplotlib pandas --break-system-packages
+```
+
+### Project Structure
+
+```
+motor_test/
+├── Motor_test/
+│   ├── Motor_test.ino       # Arduino firmware
+│   ├── aquisicao.py         # Serial data acquisition script
+│   └── analise.py           # Data analysis and plot generation
+├── data/
+│   ├── raw/                 # Auto-generated CSV files (gitignored)
+│   └── samples/             # Curated representative CSVs for the article
+└── .gitignore
+```
+
+### Usage
+
+**Step 1 — Flash the firmware** using the Arduino IDE, then close the Serial Monitor.
+
+**Step 2 — Run acquisition:**
+```bash
+python3 aquisicao.py
+```
+The script connects to `/dev/ttyUSB0` at 115200 baud, saves data to `data/raw/teste_YYYY-MM-DD_HH-MM-SS.csv`, and prints each line to the terminal. Press `Ctrl+C` to stop and close the serial port cleanly.
+
+**Step 3 — Run analysis:**
+```bash
+python3 analise.py
+```
+Enter the CSV filename when prompted. The script generates a three-panel plot (PWM, throttle %, and ADC raw vs. time) and saves it as a PNG alongside the CSV.
 
 ---
 
@@ -231,3 +329,5 @@ This output can be monitored via the Arduino IDE Serial Monitor or plotted with 
 - **`sistemaTravado` is irreversible:** Once the disconnection lock is triggered, there is no in-firmware path to clear it without a physical reset. This is intentional as a safety measure but should be documented for the operator.
 
 - **No EEPROM persistence:** The ESC type selected in the menu is not stored in non-volatile memory. Every power cycle requires the operator to re-select the mode.
+
+- **Single serial port dependency:** The Python acquisition script and the Arduino IDE Serial Monitor cannot access the port simultaneously. The Serial Monitor must be closed before running `aquisicao.py`.
