@@ -18,6 +18,8 @@ try:
 
         while True:
             linha = ser.readline().decode('utf-8').strip()  # Lê uma linha da porta serial
+            if not linha:
+                continue  # Se a linha estiver vazia, continua para a próxima iteração
             print(linha)  # Exibe a linha recebida no console
             writer.writerow(linha.split(','))  # Escreve a linha no arquivo CSV
 
