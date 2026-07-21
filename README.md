@@ -300,9 +300,19 @@ motor_test/
 │   └── analise.py           # Data analysis and plot generation
 ├── data/
 │   ├── raw/                 # Auto-generated CSV files (gitignored)
-│   └── samples/             # Curated representative CSVs for the article
+│   └── samples/             # Curated representative CSVs and PNGs for publication
 └── .gitignore
 ```
+
+### Standardized Test Protocols
+
+To ensure reproducible and comparable results across different ESC models, the following test protocols are recommended:
+
+| Test | Description | Applicable Modes |
+|---|---|---|
+| **Manual Ramp** | Gradually rotate the potentiometer from 0% to 100% (or -100% to +100%) over ~5–10 seconds | UNI, BI |
+| **Step (Positive)** | Hold at neutral for ~3 seconds, then abruptly rotate to maximum forward throttle | UNI, BI |
+| **Step (Negative)** | Hold at neutral for ~3 seconds, then abruptly rotate to maximum reverse throttle | BI only |
 
 ### Usage
 
@@ -310,15 +320,25 @@ motor_test/
 
 **Step 2 — Run acquisition:**
 ```bash
-python3 aquisicao.py
+python3 Motor_test/aquisicao.py
 ```
 The script connects to `/dev/ttyUSB0` at 115200 baud, saves data to `data/raw/teste_YYYY-MM-DD_HH-MM-SS.csv`, and prints each line to the terminal. Press `Ctrl+C` to stop and close the serial port cleanly.
 
 **Step 3 — Run analysis:**
 ```bash
-python3 analise.py
+python3 Motor_test/analise.py
 ```
-Enter the CSV filename when prompted. The script generates a three-panel plot (PWM, throttle %, and ADC raw vs. time) and saves it as a PNG alongside the CSV.
+
+The analysis script supports two modes:
+
+**Mode 1 — Individual plot:** Enter the CSV filename and a label (e.g. `UNI` or `BI`). The script generates a three-panel plot (PWM, throttle %, and ADC raw vs. time) with the label in each subplot title, and saves it as a PNG alongside the CSV.
+
+**Mode 2 — Comparison plot:** Enter two CSV filenames and their respective labels. The script aligns both datasets to start at t=0, clips them to the same duration, and overlays them in a three-panel comparative plot. The output PNG is saved as `comparacao_<file1>_vs_<file2>.png`.
+
+> **Note:** Only `ARMED` state data is plotted in both modes. `DISARMED`, `WAITING_NEUTRAL`, and `LOCKED` rows are automatically filtered out before plotting.
+
+**Step 4 — Curate results:**
+Copy the most representative CSVs and PNGs from `data/raw/` to `data/samples/` for use in publications and repository sharing.
 
 ---
 
@@ -331,3 +351,7 @@ Enter the CSV filename when prompted. The script generates a three-panel plot (P
 - **No EEPROM persistence:** The ESC type selected in the menu is not stored in non-volatile memory. Every power cycle requires the operator to re-select the mode.
 
 - **Single serial port dependency:** The Python acquisition script and the Arduino IDE Serial Monitor cannot access the port simultaneously. The Serial Monitor must be closed before running `aquisicao.py`.
+
+- **Open-loop architecture:** The bench operates in open loop — it generates and records PWM command signals but has no feedback from the motor or ESC. It characterizes the command behavior of the system, not the mechanical response. Sensor integration (e.g. current sensor, RPM sensor) would be required for closed-loop characterization.
+
+- **Bidirectional neutral dead zone:** The neutral lock mechanism requires the potentiometer ADC reading to be within ±30 of 512 before control is released. This creates a small dead zone around the center position in bidirectional mode, which may cause minor oscillations at the start of tests that begin near neutral. This behavior is visible in the telemetry data and should be accounted for when interpreting bidirectional test results.
