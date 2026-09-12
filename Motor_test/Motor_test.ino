@@ -188,7 +188,7 @@ void loop() {
 
       //-- Signal mapping per ESC type--
       if (escType == 0) {
-        sinalFinal  = map(leituraAtual, 0, 1023, 1000, 1900);
+        sinalFinal  = map(leituraAtual, 0, 1023, 1000, 2000); //Mudei para 2000 para testar configuração do ESC
         porcentagem = map(leituraAtual, 0, 1023, 0, 100);
         sinalLiberado = true;
       } else {
